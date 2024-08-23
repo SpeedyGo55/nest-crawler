@@ -1,32 +1,82 @@
 // simple gentle web crawler in Rust
 
+use std::sync::Arc;
+use tokio::sync::{Mutex};
 use reqwest;
 use robotparser::parser::parse_robots_txt;
 use robotparser::service::RobotsTxtService;
 use tokio;
 use url::Url;
 
-const START_URL: &str = "https://www.rust-lang.org/";
+const START_URLS: [&str; 20] = [
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/",
+    "https://www.rust-lang.org/"
+];
 const USER_AGENT: &str = "RustCrawler/0.1";
 
 #[tokio::main]
 async fn main() {
-    let mut visited = vec![START_URL.to_string()];
-    let mut to_visit = vec![START_URL.to_string()];
+    let visited = Arc::new(Mutex::new(START_URLS.iter().map(|s| s.to_string()).collect::<Vec<String>>()));
+    let to_visit = Arc::new(Mutex::new(START_URLS.iter().map(|s| s.to_string()).collect::<Vec<String>>()));
+    let client = reqwest::Client::new();
+    let max_workers = 10;
+    let mut workers = vec![];
 
-    while let Some(url) = to_visit.pop() {
-        println!("Visiting: {}", url);
-
-        let response = reqwest::get(&url).await.unwrap();
-        let body = response.text().await.unwrap();
-
-        for link in find_links(&body, &url) {
-            if !visited.contains(&link) {
-                visited.push(link.clone());
-                to_visit.push(link);
+    for id in 0..max_workers {
+        let client = client.clone();
+        let visited = visited.clone();
+        let to_visit = to_visit.clone();
+        let worker = tokio::spawn(async move {
+            let mut finished = false;
+            while !finished {
+                let url = {
+                    let mut to_visit = to_visit.lock().await;
+                    if to_visit.is_empty() {
+                        finished = true;
+                        continue;
+                    }
+                    to_visit.pop().unwrap()
+                };
+                println!("Worker {}: Visiting: {}", &id, &url);
+                let body = client.get(&url).send().await.unwrap().text().await.unwrap();
+                let links = find_links(&body, &url);
+                let mut visited = visited.lock().await;
+                let mut to_visit = to_visit.lock().await;
+                for link in links {
+                    if !visited.contains(&link) {
+                        visited.push(link.clone());
+                        to_visit.push(link);
+                    }
+                }
+                drop(visited);
+                drop(to_visit);
             }
-        }
+        });
+        workers.push(worker);
     }
+
+    for worker in workers {
+        worker.await.unwrap();
+    }
+
 }
 
 fn find_links(body: &str, url: &str) -> Vec<String> {
@@ -36,7 +86,10 @@ fn find_links(body: &str, url: &str) -> Vec<String> {
     let robots_txt = parse_robots_txt(base_url.origin(), &robots_txt).get_result();
 
     for cap in regex::Regex::new(r#"<a[^>]*\s*href="([^"]*)"[^>]*>"#).unwrap().captures_iter(body) {
-        let link = cap.get(1).unwrap().as_str();
+        let mut link = cap.get(1).unwrap().as_str();
+        if link.contains("#") {
+            link = link.split("#").collect::<Vec<&str>>()[0];
+        }
         if link.starts_with("http") {
             let url_link = Url::parse(&link).unwrap();
             if robots_txt.can_fetch("*", &url_link) {
