@@ -1,0 +1,13 @@
+[package]
+name = "nest-crawler"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+reqwest = "0.12.7"
+tokio = { version = "1.0.0", features = ["rt", "rt-multi-thread", "macros"] }
+regex = "1.10.6"
+robotparser = "0.11.0"
+url = "2.5.2"
