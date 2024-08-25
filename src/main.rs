@@ -80,15 +80,18 @@ impl<N: std::fmt::Debug + std::fmt::Display, E: std::fmt::Debug + std::fmt::Disp
         */
         //each node is a file
 
-        fs::create_dir("obsidian").expect("Unable to create directory");
-
+        let obsidian = std::path::Path::new("obsidian");
+        if !obsidian.exists() {
+            fs::create_dir("obsidian").expect("Unable to create directory");
+        }
         for (i, node) in self.nodes.iter().enumerate() {
             let mut file = String::new();
+            let unfiltered = node.to_string();
             let node = node.to_string().replace("/", "_").replace(":", "_");
-            file.push_str(&format!("# {}\n", node));
+            file.push_str(&format!("# [{}]({})\n", node, unfiltered));
             for edge in self.edges.iter() {
                 if edge.0 == i {
-                    file.push_str(&format!("- [[{}]]: {}\n", self.nodes[edge.1], edge.2));
+                    file.push_str(&format!("- [[{}]]: [{}]({})\n", self.nodes[edge.1], edge.2, self.nodes[edge.1]).replace("/", "_").replace(":", "_"));
                 }
             }
             println!("File: {}, {}", node, file);
@@ -156,17 +159,10 @@ async fn main() {
                         to_visit.push(link.clone());
                     }
 
-                    if graph.nodes.contains(&link) {
-                        continue;
-                    }
-
                     let node_id = graph.nodes.len();
 
                     let parent_id = graph.nodes.iter().rposition(|r| { r == &url}).unwrap();
 
-                    if graph.edges.contains(&(parent_id.clone(), node_id.clone(), "link".to_string())) {
-                        continue;
-                    }
                     graph.nodes.push(link.clone());
                     graph.edges.push((parent_id, node_id, "link".to_string()));
                 }
